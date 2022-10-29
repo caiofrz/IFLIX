@@ -6,7 +6,7 @@ select f.nome as filme, l.data_inicio as data_locação from locacao l
 inner join locacao_filme lf on l.id = lf.locacao_id
 inner join filme f on lf.filme_id = f.id
 where l.data_inicio between ('2021-01-01') and (curdate())
-order by f.nome;
+order by l.data_inicio;
 
 SELECT * FROM vw_filme_alugado_data;
 
@@ -14,7 +14,7 @@ SELECT * FROM vw_filme_alugado_data;
 
 -- View que armazena as principais infos sobre os usuários escondendo o cpf e data de nascimento
 CREATE VIEW vw_infos_clientes AS 
-SELECT (id, nome, email, telefone)
+SELECT id, nome, email, telefone
 FROM cliente;
 
 SELECT * FROM vw_infos_clientes;
@@ -42,11 +42,8 @@ order by c.nome;
 SELECT * FROM vw_series_alugadas_clientes;
 
 
+-- --------------------------------------------------------------------------
 
-
---------------- TRIGGER -------------------------
-
--- -----------------------------------------------------------------------------------------------
 delimiter $
 create trigger tgg_historico_filme 
 before delete on filme
@@ -124,8 +121,6 @@ begin
 end $
 delimiter ;
 
-------------------------------------------------------------------------------------------------------
-
 
 ---------------------- STORED PROCEDURES --------------------
 
@@ -133,44 +128,18 @@ delimiter ;
 DELIMITER $
 CREATE PROCEDURE sp_historico_cliente(in nome_cliente VARCHAR(45))
 BEGIN
-	select c.nome as cliente, count(l.id) as qt_locaçâo, l.valor as valor_total 
-	from cliente c left join locacao l on c.id = l.cliente_id
-    where c.nome = nome_cliente
-	group by c.nome;
+	select c.nome as cliente, count(lf.locacao_id) as qt_locaçâo, l.valor as valor_total 
+	from cliente c inner join locacao l on c.id = l.cliente_id inner join locacao_filme lf 
+	on lf.locacao_id = l.id
+	where c.nome = nome_cliente;
     
 END $
 DELIMITER ;
 
 CALL sp_historico_cliente("Ruan Ian Moura");
 
----------------------------------------------------------------
+CALL sp_historico_cliente("Ruan Ian Moura");
 
--- Procedure para cadastrar locações 
--- Opção(1. Filme, 2.Serie), id da locação, id do cliente, id do filme, id da serie
-
-delimiter $
-create procedure sp_inserir_locacao(in opcao int, in id_locacao int, in id_cliente int, in id_filme int, in id_serie int)
-begin
-	declare vl_filme decimal(5,2);
-    declare vl_serie decimal(5,2);
-    declare vl decimal(5,2);
-	insert into locacao values(id_locacao, curdate(), adddate(curdate(), 30), 00.00, id_cliente);
-    select preco_locacao into vl_filme from filme where id = id_filme;
-    select preco_locacao into vl_serie from serie where id = id_serie;
-    select valor into vl from locacao where cliente_id = id_cliente group by cliente_id;
-    
-    if(opcao = 1) then -- FILME
-		insert into locacao_filme values(id_locacao, id_filme);
-        update locacao l set l.valor = vl + vl_filme where cliente_id = id_cliente;
-	end if ;
-	if(opcao = 2) then -- SÉRIE
-		insert into locacao_serie values(id_locacao, id_serie);
-        update locacao l set l.valor = vl + vl_serie where cliente_id = id_cliente;
-	end if; 
-end $
-delimiter ;
-
-CALL sp_inserir_locacao();
 -- -----------------------------------------------------------------------------------------------------
 
 -- Procedure que retorna filmes e series com valor de aluguel >= ao passado como parametro 
@@ -187,7 +156,7 @@ BEGIN
 END $
 DELIMITER ;
 
-CALL retorna_fs_com_preco_maiorigual();
+CALL retorna_fs_com_preco_maiorigual(10.00);
 --------------------------------------------------------------------------------------------
 
 -- Procedure que retorna filmes e series com valor de aluguel <= ao passado como parametro 
@@ -210,14 +179,13 @@ DELIMITER ;
 
 -- Função que verifica a frequencia de locação de um usuáro
 DELIMITER $
-CREATE FUNCTION verificar_frequencia_locacao(id INT) RETURNS VARCHAR(255)
+CREATE FUNCTION verificar_frequencia_locacao(id INT) RETURNS VARCHAR(80) DETERMINISTIC
 BEGIN
     DECLARE qtd_locacao INT;
 
-    SELECT COUNT(c.cliente_id) INTO qtd_locacao FROM cliente c 
-    INNER JOIN locacao l ON c.cliente_id = l.cliente_id;
+    SELECT COUNT(l.cliente_id) INTO qtd_locacao FROM locacao l WHERE id = l.cliente_id;
 
-    IF qtd_locacao <= 15 THEN
+    IF qtd_locacao < 10 THEN
         RETURN (SELECT CONCAT("Esse usuário não é recorrente!"));
     ELSE
         RETURN (SELECT CONCAT("Esse usuário faz alugueis periodicamente!"));
@@ -225,4 +193,24 @@ BEGIN
 END $
 DELIMITER ;
 ---------------------------------------------------------------
+
+-- Função que verifica se o cliente está cadastrado no banco. 
+DELIMITER $
+CREATE FUNCTION verifica_se_esta_cadastrado(nomeCliente VARCHAR(45)) RETURNS VARCHAR(45) DETERMINISTIC
+BEGIN 
+    DECLARE estaCadastrado VARCHAR(45);
+
+    SELECT nome INTO estaCadastrado
+    FROM cliente
+    WHERE nome = nomeCliente;
+
+    IF estaCadastrado IS NULL THEN
+        RETURN (SELECT CONCAT("Esse usuário não está cadastrado!"));
+    ELSE
+        RETURN (SELECT CONCAT("Esse usuário ", estaCadastrado, " está cadastrado!"));
+    END IF;
+
+END $
+DELIMITER ;
+
 
